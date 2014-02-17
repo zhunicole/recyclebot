@@ -1,0 +1,1056 @@
+<html>
+<body>
+<script type='text/javascript'>
+
+// main
+
+function FrequencyAnalyzer()
+{
+	this.main = function()
+	{
+		var pNumberOfHarmonics = document.createElement("p");
+		pNumberOfHarmonics.innerHTML = "Number of Harmonic Components:";
+		document.body.appendChild(pNumberOfHarmonics);
+
+		var inputNumberOfHarmonics = document.createElement("input");
+		inputNumberOfHarmonics.id = "inputNumberOfHarmonics";
+		inputNumberOfHarmonics.type = "number";
+		inputNumberOfHarmonics.value = "2048";
+		document.body.appendChild(inputNumberOfHarmonics);
+
+		document.write("<br />");
+
+		var inputFileChooser = document.createElement("input");
+		inputFileChooser.type = "file";
+		inputFileChooser.addEventListener
+		(
+			"change", 
+			this.loadFileAndAnalyze
+		);
+		inputFileChooser.frequencyAnalyzer = this;
+		document.body.appendChild(inputFileChooser);
+	}
+
+	this.loadFileAndAnalyze = function(event)
+	{
+		var frequencyAnalyzer = event.target.frequencyAnalyzer;
+		var fileSpecified = event.target.files[0];
+		WavFile.readFromFile
+		(
+			fileSpecified, 
+			frequencyAnalyzer,
+			frequencyAnalyzer.loadFileAndAnalyze_LoadComplete
+		);
+	}
+
+	this.loadFileAndAnalyze_LoadComplete = function(wavFileToAnalyze)
+	{
+		var inputNumberOfHarmonics = document.getElementById("inputNumberOfHarmonics");
+		var numberOfHarmonicComponents = parseInt(inputNumberOfHarmonics.value);
+		document.write("Analyzing wav file...<br />");
+		var amplitudesOfHarmonicComponents = [];
+
+		var samples = wavFileToAnalyze.samplesForChannels[0];
+		var numberOfSamples = samples.length;
+		var samplesPerSecond = wavFileToAnalyze.samplingInfo.samplesPerSecond;
+		var durationInSeconds = wavFileToAnalyze.durationInSeconds();
+		console.log('numberOfSamples ' + numberOfSamples);
+		console.log('samplespersecond ' + samplesPerSecond);
+		console.log('durationInSeconds ' + durationInSeconds);
+
+		var frequencyOfFundamental = 1;
+
+		for (var h = 0; h < numberOfHarmonicComponents; h++)
+		{
+			var frequencyOfHarmonicComponent = frequencyOfFundamental * h;
+			var sumOfSamplesTimesCosines = 0;
+
+			for (var s = 0; s < numberOfSamples; s++)
+			{
+				var sample = samples[s];
+
+				var sampleValue = sample.convertToDouble();
+				var timeOffsetInSeconds = s / samplesPerSecond;
+
+				var timeOffsetInCycles = timeOffsetInSeconds * frequencyOfHarmonicComponent;
+				var cosine = Math.cos(timeOffsetInCycles * Math.PI * 2.0); 
+				var sampleTimesCosine = sampleValue * cosine;
+
+				sumOfSamplesTimesCosines += sampleTimesCosine;			
+			}
+
+			amplitudesOfHarmonicComponents[h] = 
+				sumOfSamplesTimesCosines
+				/ numberOfSamples;
+		}
+
+		wavFileToAnalyze.silenceSamples
+		(
+			0, // timeOffsetInSecondsCurrent,
+			durationInSeconds
+		);
+
+		var amplitudesAsString = "Amplitudes for harmonic oscillators are: \n";
+		// var frequenciesAsString = "Frequencies for harmonic oscillators are: \n";
+
+		for (var h = 0; h < numberOfHarmonicComponents; h++)
+		{
+			amplitudesAsString += h + "=" + amplitudesOfHarmonicComponents[h]*1000000 + "\n";
+
+			var frequencyOfHarmonicComponent = frequencyOfFundamental * h;
+			var amplitudeOfHarmonicComponent = amplitudesOfHarmonicComponents[h];
+
+			// frequenciesAsString += h + "=" + frequencyOfHarmonicComponent + "\n";
+
+
+			wavFileToAnalyze.addVoiceToSamples
+			(
+				Voice.Instances.Sine,
+				new Volume(null, amplitudeOfHarmonicComponent),
+				frequencyOfHarmonicComponent,
+				0, //timeOffsetInSecondsCurrent,
+				durationInSeconds
+			);
+		}
+
+		document.write("<br />");
+		var textAreaHarmonicAmplitudes = document.createElement("textarea");
+		textAreaHarmonicAmplitudes.style.width = "400px";
+		textAreaHarmonicAmplitudes.style.height = "200px";
+		textAreaHarmonicAmplitudes.innerHTML = amplitudesAsString;
+		document.body.appendChild(textAreaHarmonicAmplitudes);
+
+		var soundAsBytes = wavFileToAnalyze.writeToBytes();
+
+		var soundAsStringBase64 = Base64Encoder.encodeBytes(soundAsBytes);
+
+		var soundAsDataURI = 'data:audio/wav;base64,' + soundAsStringBase64;
+
+		var htmlElementSoundSource = document.createElement("source");
+		htmlElementSoundSource.src = soundAsDataURI;
+
+		var htmlElementAudio = document.createElement("audio");
+		htmlElementAudio.autoplay = true;
+
+		htmlElementAudio.appendChild(htmlElementSoundSource);
+
+		document.body.appendChild(htmlElementAudio);	
+	}
+}
+
+// classes
+
+function Base64Encoder()
+{
+	// do nothing
+}
+{
+	// static methods
+
+	Base64Encoder.encodeBytes = function(bytesToEncode)
+	{
+		// Encode each three sets of eight bits (octets, or bytes)
+		// as four sets of six bits (sextets, or Base 64 digits)
+
+		var returnString = "";
+
+		var bytesPerSet = 3;
+		var base64DigitsPerSet = 4;
+
+		var base64DigitsAsString = 
+			"ABCDEFGHIJKLMNOPQRSTUVWXYZ" 
+			+ "abcdefghijklmnopqrstuvwxyz"
+			+ "0123456789"
+			+ "+/";
+
+		var numberOfBytesToEncode = bytesToEncode.length;
+		var numberOfFullSets = Math.floor(numberOfBytesToEncode / bytesPerSet);
+		var numberOfBytesInFullSets = numberOfFullSets * bytesPerSet;
+		var numberOfBytesLeftAtEnd = numberOfBytesToEncode - numberOfBytesInFullSets;
+
+		for (var s = 0; s < numberOfFullSets; s++)
+		{
+			var b = s * bytesPerSet;
+
+			var valueToEncode = 
+				(bytesToEncode[b] << 16)
+				| (bytesToEncode[b + 1] << 8)
+				| (bytesToEncode[b + 2]);
+
+			returnString += base64DigitsAsString[((valueToEncode & 0xFC0000) >>> 18)];
+			returnString += base64DigitsAsString[((valueToEncode & 0x03F000) >>> 12)];
+			returnString += base64DigitsAsString[((valueToEncode & 0x000FC0) >>> 6)];
+			returnString += base64DigitsAsString[((valueToEncode & 0x00003F))];
+		}	
+
+		var b = numberOfFullSets * bytesPerSet;
+
+		if (numberOfBytesLeftAtEnd == 1)
+		{
+			var valueToEncode = (bytesToEncode[b] << 16);
+
+			returnString += base64DigitsAsString[((valueToEncode & 0xFC0000) >>> 18)];
+			returnString += base64DigitsAsString[((valueToEncode & 0x03F000) >>> 12)];
+			returnString += "==";
+		}		
+		else if (numberOfBytesLeftAtEnd == 2)
+		{
+			var valueToEncode = 
+				(bytesToEncode[b] << 16)
+				| (bytesToEncode[b + 1] << 8);
+
+			returnString += base64DigitsAsString[((valueToEncode & 0xFC0000) >>> 18)];
+			returnString += base64DigitsAsString[((valueToEncode & 0x03F000) >>> 12)];
+			returnString += base64DigitsAsString[((valueToEncode & 0x000FC0) >>> 6)];
+			returnString += "=";
+		}
+
+		return returnString;
+	}
+}
+
+function ByteStreamLittleEndian(bytes)
+{
+	this.bytes = bytes;  
+
+	this.numberOfBytesTotal = this.bytes.length;
+	this.byteIndexCurrent = 0;
+}
+{
+	ByteStreamLittleEndian.prototype.peekBytes = function(numberOfBytesToRead)
+	{
+		var returnValue = [];
+
+		for (var b = 0; b < numberOfBytesToRead; b++)
+		{
+			returnValue[b] = this.bytes[this.byteIndexCurrent + b];
+		}
+
+		return returnValue;
+	}
+
+	ByteStreamLittleEndian.prototype.readBytes = function(numberOfBytesToRead)
+	{
+		var returnValue = [];
+
+		for (var b = 0; b < numberOfBytesToRead; b++)
+		{
+			returnValue[b] = this.readByte();
+		}
+
+		return returnValue;
+	}
+
+	ByteStreamLittleEndian.prototype.readByte = function()
+	{
+		var returnValue = this.bytes.charCodeAt(this.byteIndexCurrent);
+
+		this.byteIndexCurrent++;
+
+		return returnValue;
+	}
+
+	ByteStreamLittleEndian.prototype.readInt = function()
+	{
+		var returnValue =
+		(
+			(this.readByte() & 0xFF)
+			| ((this.readByte() & 0xFF) << 8 )
+			| ((this.readByte() & 0xFF) << 16)
+			| ((this.readByte() & 0xFF) << 24)
+		);
+
+		return returnValue;
+	}
+
+	ByteStreamLittleEndian.prototype.readShort = function()
+	{
+		var returnValue =
+		(
+			(this.readByte() & 0xFF)
+			| ((this.readByte() & 0xFF) << 8 )
+		);
+
+		return returnValue;
+	}
+
+	ByteStreamLittleEndian.prototype.writeBytes = function(bytesToWrite)
+	{
+		for (var b = 0; b < bytesToWrite.length; b++)
+		{
+			this.bytes.push(bytesToWrite[b]);
+		}
+
+		this.byteIndexCurrent = this.bytes.length;
+	}
+
+	ByteStreamLittleEndian.prototype.writeByte = function(byteToWrite)
+	{
+		this.bytes.push(byteToWrite);
+
+		this.byteIndexCurrent++;
+	}
+
+	ByteStreamLittleEndian.prototype.writeInt = function(integerToWrite)
+	{
+		this.bytes.push( (integerToWrite & 0x000000FF) );
+		this.bytes.push( (integerToWrite & 0x0000FF00) >>> 8 );
+		this.bytes.push( (integerToWrite & 0x00FF0000) >>> 16 );
+		this.bytes.push( (integerToWrite & 0xFF000000) >>> 24 );
+
+		this.byteIndexCurrent += 4;
+	}
+
+	ByteStreamLittleEndian.prototype.writeShort = function(shortToWrite)
+	{
+		this.bytes.push( (shortToWrite & 0x00FF) );
+		this.bytes.push( (shortToWrite & 0xFF00) >>> 8 );
+
+		this.byteIndexCurrent += 2;
+	}
+
+	ByteStreamLittleEndian.prototype.writeString = function(stringToWrite)
+	{
+		for (var i = 0; i < stringToWrite.length; i++)
+		{
+			this.writeByte(stringToWrite.charCodeAt(i));
+		}
+	}
+}
+
+function Voice(name, sample)
+{
+	this.name = name;
+	this.sample = sample;
+}
+{
+	Voice_Instances = function()
+	{
+		this.Sine = new Voice
+		(
+			"Sine",
+			// sample
+			function(timeOffsetInSeconds, frequencyInCyclesPerSecond)
+			{
+				var timeOffsetInCycles = timeOffsetInSeconds * frequencyInCyclesPerSecond;
+				var fractionOfCycleCurrent = timeOffsetInCycles - Math.floor(timeOffsetInCycles);
+				returnValue = Math.sin(fractionOfCycleCurrent * Math.PI * 2.0); 
+
+				return returnValue;
+			}		
+		);
+	}
+
+	Voice.Instances = new Voice_Instances();
+}
+
+function Volume(name, relativeLoudness)
+{
+	this.name = name;
+	this.relativeLoudness = relativeLoudness;
+}
+
+function WavFile
+(
+	filePath,
+	samplingInfo,
+	samplesForChannels
+)
+{
+	this.filePath = filePath;
+	this.samplingInfo = samplingInfo;
+	this.samplesForChannels = samplesForChannels;
+
+	 // hack
+	if (this.samplingInfo == null)
+	{
+		this.samplingInfo = SamplingInfo.buildDefault();
+	}
+
+	if (this.samplesForChannels == null)
+	{
+		var numberOfChannels = this.samplingInfo.numberOfChannels; 
+
+		this.samplesForChannels = [];
+		for (var c = 0; c < numberOfChannels; c++)
+		{
+			this.samplesForChannels[c] = [];
+		}
+	}
+}
+{
+	// constants
+
+	WavFile.BitsPerByte = 8;
+	WavFile.NumberOfBytesInRiffWaveAndFormatChunks = 36;
+
+	// static methods
+
+	WavFile.readFromFile = function(fileToReadFrom, callbackObject, callbackFunction)
+	{		
+		var returnValue = new WavFile(fileToReadFrom.name, null, null);
+
+		var fileReader = new FileReader();
+		fileReader.onloadend = function(fileLoadedEvent)
+		{
+			if (fileLoadedEvent.target.readyState == FileReader.DONE)
+			{
+				var bytesFromFile = fileLoadedEvent.target.result;
+				var reader = new ByteStreamLittleEndian(bytesFromFile);
+
+				returnValue.readFromFilePath_ReadChunks(reader);
+			}
+
+			callbackFunction.call(callbackObject, returnValue);
+		}
+
+		fileReader.readAsBinaryString(fileToReadFrom);
+	}
+
+	WavFile.prototype.readFromFilePath_ReadChunks = function(reader)
+	{
+		var riffStringAsBytes = reader.readBytes(4);		  
+
+		var numberOfBytesInFile = reader.readInt();
+
+		var waveStringAsBytes = reader.readBytes(4);
+
+		this.readFromFile_ReadChunks_Format(reader);
+		this.readFromFile_ReadChunks_Data(reader);
+	}
+
+	WavFile.prototype.readFromFile_ReadChunks_Format = function(reader)
+	{
+		var fmt_StringAsBytes = reader.readBytes(4);
+		var chunkSizeInBytes = reader.readInt();
+		var formatCode = reader.readShort();
+
+		var numberOfChannels = reader.readShort();
+		var samplesPerSecond = reader.readInt();
+
+		var bytesPerSecond = reader.readInt();
+		var bytesPerSampleMaybe = reader.readShort();
+		var bitsPerSample = reader.readShort();
+
+		var samplingInfo = new SamplingInfo
+		(
+			"[from file]",
+			chunkSizeInBytes,
+			formatCode,
+			numberOfChannels,
+			samplesPerSecond,
+			bitsPerSample	
+		);
+
+		this.samplingInfo = samplingInfo;
+	}
+
+	WavFile.prototype.readFromFile_ReadChunks_Data = function(reader)
+	{
+		var dataStringAsBytes = reader.readBytes(4);
+		var subchunk2SizeInBytes = reader.readInt();
+
+		var samplesForChannelsMixedAsBytes = reader.readBytes(subchunk2SizeInBytes);
+
+		var samplesForChannels = Sample.buildManyFromBytes
+		(
+			this.samplingInfo,
+			samplesForChannelsMixedAsBytes
+		);
+
+		this.samplesForChannels = samplesForChannels;	
+	}
+
+	// instance methods
+
+	WavFile.prototype.addVoiceToSamples = function
+	(
+		voice, 
+		volume,
+		frequencyInCyclesPerSecond,
+		timeOffsetInSecondsStart, 
+		durationToFilterInSeconds
+	)
+	{
+		var samplingInfo = this.samplingInfo;
+		var numberOfChannels = samplingInfo.numberOfChannels;
+		var samplesPerSecond = samplingInfo.samplesPerSecond;
+
+		var sampleIndexStart = Math.round(timeOffsetInSecondsStart * samplesPerSecond);
+		var durationToFilterInSamples = Math.round(durationToFilterInSeconds * samplesPerSecond);
+		var sampleIndexEnd = sampleIndexStart + durationToFilterInSamples;
+
+		var durationOfWavFileInSamples = this.durationInSamples();
+		if (durationOfWavFileInSamples < sampleIndexEnd)
+		{
+			this.extendOrTrimSamples(sampleIndexEnd);
+		}
+
+		var samplesForChannels = this.samplesForChannels;
+
+		var secondsPerSample = 1.0 / samplingInfo.samplesPerSecond;
+
+		var samplePrototype = this.samplingInfo.samplePrototype();
+
+		for (var s = sampleIndexStart; s < sampleIndexEnd; s++)
+		{
+			var timeOffsetInSecondsCurrent = s * secondsPerSample;
+
+			for (var c = 0; c < numberOfChannels; c++)
+			{
+				var sampleExisting = samplesForChannels[c][s];					
+
+				var voiceSampleValue = voice.sample
+				(
+					frequencyInCyclesPerSecond, 
+					timeOffsetInSecondsCurrent
+				) * volume.relativeLoudness;
+
+				var sampleValueNew = sampleExisting.convertToDouble() + voiceSampleValue;
+				var sampleValueNewAbsolute = Math.abs(sampleValueNew);
+				if (sampleValueNewAbsolute > 1)
+				{
+					sampleValueNew = sampleValueNew / sampleValueNewAbsolute;   
+				}
+
+				sampleExisting.setFromDouble(sampleValueNew);
+			}
+		}
+	}
+
+	WavFile.prototype.durationInSamples = function()
+	{
+		var returnValue = 0;
+		if (this.samplesForChannels != null)
+		{
+			if (this.samplesForChannels.length > 0)
+			{
+				returnValue = this.samplesForChannels[0].length;
+			}
+		}
+
+		return returnValue;		
+	}
+
+	WavFile.prototype.durationInSeconds = function()
+	{
+		return this.durationInSamples() / this.samplingInfo.samplesPerSecond;
+	}
+
+	WavFile.prototype.extendOrTrimSamples = function(numberOfSamplesToExtendOrTrimTo)
+	{
+		var numberOfChannels = this.samplingInfo.numberOfChannels;
+		var samplesForChannelsNew = [];
+
+		for (var c = 0; c < numberOfChannels; c++)
+		{
+			var samplesForChannelOld = this.samplesForChannels[c];
+			var samplesForChannelNew = [];
+
+			for (var s = 0; s < samplesForChannelOld.length && s < numberOfSamplesToExtendOrTrimTo; s++)
+			{
+				samplesForChannelNew[s] = samplesForChannelOld[s];				
+			}
+
+			var samplePrototype = this.samplingInfo.samplePrototype();
+
+			for (var s = samplesForChannelOld.length; s < numberOfSamplesToExtendOrTrimTo; s++)
+			{
+				samplesForChannelNew[s] = samplePrototype.build();
+			}
+
+			samplesForChannelsNew[c] = samplesForChannelNew;
+		}
+
+		this.samplesForChannels = samplesForChannelsNew;
+	}
+
+	WavFile.prototype.silenceSamples = function
+	(
+		timeOffsetInSecondsStart, 
+		durationToFilterInSeconds
+	)
+	{
+		var samplingInfo = this.samplingInfo;
+		var numberOfChannels = samplingInfo.numberOfChannels;
+		var samplesPerSecond = samplingInfo.samplesPerSecond;
+
+		var sampleIndexStart = Math.round(timeOffsetInSecondsStart * samplesPerSecond);
+		var durationToFilterInSamples = Math.round(durationToFilterInSeconds * samplesPerSecond);
+		var sampleIndexEnd = sampleIndexStart + durationToFilterInSamples;
+
+		var durationOfWavFileInSamples = this.durationInSamples();
+		if (durationOfWavFileInSamples < sampleIndexEnd)
+		{
+			this.extendOrTrimSamples(sampleIndexEnd);
+		}
+
+		var samplesForChannels = this.samplesForChannels;
+
+		var secondsPerSample = 1.0 / samplingInfo.samplesPerSecond;
+
+		var samplePrototype = this.samplingInfo.samplePrototype();
+
+		for (var s = sampleIndexStart; s < sampleIndexEnd; s++)
+		{
+			for (var c = 0; c < numberOfChannels; c++)
+			{
+				var sampleExisting = samplesForChannels[c][s];
+
+				sampleExisting.setFromDouble(0);
+			}
+		}
+	}
+
+	WavFile.prototype.writeToBytes = function()
+	{
+		var writer = new ByteStreamLittleEndian([]);
+
+		this.writeToBytes_WriteChunks(writer);
+
+		return writer.bytes;
+	}
+
+	WavFile.prototype.writeToBytes_WriteChunks = function(writer)
+	{
+		writer.writeString("RIFF");
+
+		// hack
+		var numberOfBytesOfOverhead = 
+			"RIFF".length
+			+ "WAVE".length
+			+ "fmt ".length
+			+ 20 // additional bytes In format header
+			+ "data".length;
+
+			//+ 4; // additional bytes in data header?
+
+		var numberOfBytesInFile = 
+			this.samplingInfo.numberOfChannels
+			* this.samplesForChannels[0].length
+			* this.samplingInfo.bitsPerSample
+			/ WavFile.BitsPerByte
+			+ numberOfBytesOfOverhead;
+
+		writer.writeInt(numberOfBytesInFile);
+
+		writer.writeString("WAVE");
+
+		this.writeToBytes_WriteChunks_Format(writer);
+		this.writeToBytes_WriteChunks_Data(writer);
+	}
+
+	WavFile.prototype.writeToBytes_WriteChunks_Format = function(writer)
+	{
+		writer.writeString("fmt ");
+
+		writer.writeInt(this.samplingInfo.chunkSizeInBytes);
+		writer.writeShort(this.samplingInfo.formatCode);
+
+		writer.writeShort(this.samplingInfo.numberOfChannels);
+		writer.writeInt(this.samplingInfo.samplesPerSecond);
+
+		writer.writeInt(this.samplingInfo.bytesPerSecond);
+		writer.writeShort(this.samplingInfo.bytesPerSampleMaybe);
+		writer.writeShort(this.samplingInfo.bitsPerSample);
+	}
+
+	WavFile.prototype.writeToBytes_WriteChunks_Data = function(writer)
+	{
+		writer.writeString("data");
+
+		var samplesForChannelsMixedAsBytes = Sample.convertManyToBytes
+		(
+			this.samplesForChannels,
+			this.samplingInfo
+		);
+
+		writer.writeInt(samplesForChannelsMixedAsBytes.length);
+
+		writer.writeBytes(samplesForChannelsMixedAsBytes);
+	}
+
+	// inner classes
+
+	function Sample()
+	{
+		// do nothing
+	}
+	{
+		var prototype = Sample.prototype;
+
+		prototype.build = function(){}
+		prototype.setFromBytes = function(valueAsBytes){}
+		prototype.setFromDouble = function(valueAsDouble){}
+		prototype.convertToBytes = function(){}
+		prototype.convertToDouble = function(){}
+
+	   	Sample.buildManyFromBytes = function
+		(
+			samplingInfo,
+			bytesToConvert
+		)
+		{
+			var numberOfBytes = bytesToConvert.length;
+
+			var numberOfChannels = samplingInfo.numberOfChannels;
+
+			var returnSamples = [];
+
+			var bytesPerSample = samplingInfo.bitsPerSample / WavFile.BitsPerByte;
+
+			var samplesPerChannel =
+				numberOfBytes
+				/ bytesPerSample
+				/ numberOfChannels;
+
+			for (var c = 0; c < numberOfChannels; c++)
+			{
+				returnSamples[c] = [];
+			}
+
+			var b = 0;
+
+			var halfMaxValueForEachSample = Math.pow
+			(
+				2, WavFile.BitsPerByte * bytesPerSample - 1
+			);
+
+			var samplePrototype = samplingInfo.samplePrototype();
+
+			var sampleValueAsBytes = [];
+
+			for (var s = 0; s < samplesPerChannel; s++)
+			{				
+				for (var c = 0; c < numberOfChannels; c++)
+				{
+					for (var i = 0; i < bytesPerSample; i++)
+					{
+						sampleValueAsBytes[i] = bytesToConvert[b];
+						b++;
+					}
+
+					returnSamples[c][s] = samplePrototype.build().setFromBytes
+					(
+						sampleValueAsBytes
+					);
+				}
+			}
+
+			return returnSamples;
+		}
+
+		Sample.convertManyToBytes = function
+		(
+			samplesToConvert,
+			samplingInfo
+		)
+		{
+			var returnBytes = null;
+
+			var numberOfChannels = samplingInfo.numberOfChannels;
+
+			var samplesPerChannel = samplesToConvert[0].length;
+
+			var bitsPerSample = samplingInfo.bitsPerSample;
+
+			var bytesPerSample = bitsPerSample / WavFile.BitsPerByte;
+
+			var numberOfBytes =
+				numberOfChannels
+				* samplesPerChannel
+				* bytesPerSample;
+
+			returnBytes = [];
+
+			var halfMaxValueForEachSample = Math.pow
+			(
+				2, WavFile.BitsPerByte * bytesPerSample - 1
+			);
+
+			var b = 0;
+
+			for (var s = 0; s < samplesPerChannel; s++)
+			{
+				for (var c = 0; c < numberOfChannels; c++)
+				{
+					var sample = samplesToConvert[c][s];	
+
+					var sampleAsBytes = sample.convertToBytes();
+
+					for (var i = 0; i < bytesPerSample; i++)
+					{
+						returnBytes[b] = sampleAsBytes[i];
+						b++;
+					}
+				}						
+			}
+
+			return returnBytes;
+		}	
+	}
+
+	function Sample16(value)
+	{
+		this.value = value;
+	}
+	{
+		Sample16.MaxValue = Math.pow(2, 15) - 1;
+		Sample16.DoubleMaxValue = Math.pow(2, 16);
+
+		var prototype = Sample16.prototype;
+
+		// Sample members
+		prototype.build = function()
+		{
+			return new Sample16(0);
+		}
+
+		prototype.setFromBytes = function(valueAsBytes)
+		{
+			this.value =
+			(
+				(valueAsBytes[0] & 0xFF)
+				| ((valueAsBytes[1] & 0xFF) << 8 )
+			);
+
+			if (this.value > Sample16.MaxValue) 
+			{
+				this.value -= Sample16.DoubleMaxValue;
+			}
+
+			return this;
+		}
+
+		prototype.setFromDouble = function(valueAsDouble)
+		{
+			this.value =
+			(
+				valueAsDouble * Sample16.MaxValue
+			);
+
+			return this;
+		}
+
+		prototype.convertToBytes = function()
+		{
+			var returnValue = 
+			[
+				((this.value) & 0xFF),
+				((this.value >>> 8 ) & 0xFF)
+			];
+
+			return returnValue;
+		}		
+
+		prototype.convertToDouble = function()
+		{
+			return 1.0 * this.value / Sample16.MaxValue;
+		}
+	}
+
+	function Sample24(value)
+	{
+		this.value = value;
+	}
+	{
+		Sample24.MaxValue = Math.pow(2, 23) - 1;
+		Sample24.DoubleMaxValue = Math.pow(2, 24);
+
+		// Sample members
+
+		var prototype = Sample24.prototype;
+
+		prototype.build = function()
+		{
+			return new Sample24(0);
+		}
+
+		prototype.setFromBytes = function(valueAsBytes)
+		{
+			this.value =
+			(
+				((valueAsBytes[0] & 0xFF))
+				| ((valueAsBytes[1] & 0xFF) << 8 )
+				| ((valueAsBytes[2] & 0xFF) << 16)
+			);
+
+			if (this.value > Sample24.MaxValue) 
+			{
+				this.value -= Sample24.DoubleMaxValue;
+			}
+
+			return this;
+		}
+
+		prototype.setFromDouble = function(valueAsDouble)
+		{
+			this.value = 
+			(
+				valueAsDouble
+				* Sample24.MaxValue
+			);
+
+			return this;
+		}
+
+		prototype.convertToBytes = function()
+		{
+			return new Array()
+			{
+				((this.value) & 0xFF),
+				((this.value >>> 8 ) & 0xFF),
+				((this.value >>> 16) & 0xFF)
+			};
+		}		
+
+		prototype.convertToDouble = function()
+		{
+			return 1.0 * this.value / Sample24.MaxValue;
+		}
+	}
+
+	function Sample32(value)
+	{
+		this.value = value;
+	}
+	{
+		Sample32.MaxValue = Math.pow(2, 32);
+		Sample32.MaxValueHalf = Math.pow(2, 31);
+
+		// Sample members
+
+		prototype.build = function()
+		{
+			return new Sample32(0);
+		}
+
+		prototype.setFromBytes = function(valueAsBytes)
+		{
+			this.value = 
+			(
+				((valueAsBytes[0] & 0xFF))
+				| ((valueAsBytes[1] & 0xFF) << 8 )
+				| ((valueAsBytes[2] & 0xFF) << 16)
+				| ((valueAsBytes[3] & 0xFF) << 24)
+			);
+
+			if (this.value > Sample32.MaxValue) 
+			{
+				this.value -= Sample32.DoubleMaxValue;
+			}
+
+			return this;
+		}
+
+		prototype.setFromDouble = function(valueAsDouble)
+		{
+			this.value = 
+			(
+				valueAsDouble
+				* Sample32.MaxValue
+			);
+
+			return this;
+		}
+
+		prototype.convertToBytes = function()
+		{
+			return new Array()
+			{
+				((this.value) & 0xFF),
+				((this.value >>> 8 ) & 0xFF),
+				((this.value >>> 16) & 0xFF),
+				((this.value >>> 24) & 0xFF)
+			};
+		}	
+
+		prototype.convertToDouble = function()
+		{
+			return 1.0 * this.value / Sample32.MaxValue;
+		}	
+	}
+
+	function SamplingInfo
+	(
+		 name,	   
+		 chunkSizeInBytes,
+		 formatCode,
+		 numberOfChannels,		
+		 samplesPerSecond,
+		 bitsPerSample
+	)
+	{
+		this.name = name;
+		this.chunkSizeInBytes = chunkSizeInBytes;
+		this.formatCode = formatCode;
+		this.numberOfChannels = numberOfChannels;
+		this.samplesPerSecond = samplesPerSecond;
+		this.bitsPerSample = bitsPerSample;
+	}
+	{
+		var prototype = SamplingInfo.prototype;
+
+		SamplingInfo.buildDefault = function()
+		{
+			return new SamplingInfo
+			(
+				"Default",
+				16, // chunkSizeInBytes
+				1, // formatCode
+				1, // numberOfChannels
+				44100,	 // samplesPerSecond
+				16 // bitsPerSample
+			);
+		}
+
+		prototype.bytesPerSecond = function()
+		{	
+			return this.samplesPerSecond
+				* this.numberOfChannels
+				* this.bitsPerSample / WavFile.BitsPerByte;
+		}
+
+		prototype.samplePrototype = function()
+		{
+			var returnValue = null;
+
+			if (this.bitsPerSample == 16)
+			{
+				returnValue = new Sample16(0);
+			}
+			else if (this.bitsPerSample == 24)
+			{
+				returnValue = new Sample24(0);
+			}
+			else if (this.bitsPerSample == 32)
+			{
+				returnValue = new Sample32(0);
+			}
+
+			return returnValue;
+		}
+
+		prototype.toString = function()
+		{
+			var returnValue =
+				"<SamplingInfo "
+				+ "chunkSizeInBytes='" + this.chunkSizeInBytes + "' "
+				+ "formatCode='" + this.formatCode + "' "
+				+ "numberOfChannels='" + this.numberOfChannels + "' "
+				+ "samplesPerSecond='" + this.samplesPerSecond + "' "
+				+ "bitsPerSample='" + this.bitsPerSample + "' "
+				+ "/>";
+
+			return returnValue;
+		}		
+	}
+}
+
+// run
+
+new FrequencyAnalyzer().main();
+
+</script>
+</body>
+</html>
